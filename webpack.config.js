@@ -8,7 +8,7 @@ module.exports = {
     },
     output: {
         path: path.resolve(__dirname, './docs'),
-        publicPath: '/',
+        publicPath: 'https://dengcheke.github.io/zstp/',
     },
     resolve: {
         alias: {
