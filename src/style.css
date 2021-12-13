@@ -1,0 +1,43 @@
+html, body {
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+div,p{
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+div#app {
+  background-color: black;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+div#info {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 100px;
+  background-color: beige;
+  z-index: 3;
+}
+
+canvas {
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  z-index: 1;
+}
+
+canvas#label {
+  z-index: 2;
+  pointer-events: none;
+}
