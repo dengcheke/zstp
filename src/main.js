@@ -55,7 +55,7 @@ function getTestGraphData() {
                 sColor: randomColor(),
                 tColor: randomColor(),
                 width: (Math.random() * 5 >> 0) + 5,
-                flow: false,//randomBoolean()
+                flow: randomBoolean()
             },
             label: {
                 text: `link${id}(${s}=>${t})`,
@@ -80,7 +80,7 @@ function getTestGraphData() {
                     sColor: randomColor(),
                     tColor: randomColor(),
                     width: (Math.random() * 5 >> 0) + 5,
-                    flow: false,//randomBoolean()
+                    flow: randomBoolean()
                 },
                 label: {
                     text: `link${id}(${swap ? t : s}=>${swap ? s : t})`,
