@@ -132,16 +132,16 @@ void main() {
      if(!decideShow()){
         discard;
      }
-    float alpha = 1.0;
-    if(!isPick){
-        if ( vUv.y < - 1.0 || vUv.y > 1.0 ) discard;
+     if ( vUv.y < - 1.0 || vUv.y > 1.0 ) discard;
+     float alpha = 1.0;
+     if(!isPick){
         if(vFlowEnable > 0.0){
             float dis = mod(mod( vLineDistance - time * uTrail.speed, uTrail.cycle) + uTrail.cycle, uTrail.cycle);
             bool isTrail = (dis >= 0.0 && dis < uTrail.length);
             alpha = isTrail ? clamp(alpha * dis / uTrail.length, minAlpha, 1.0) : minAlpha;
         }
         alpha *= 1.0 - smoothstep(0.3, 1.0, abs(vUv.x));
-    }
-    gl_FragColor = vec4( vColor, alpha );
+     }
+     gl_FragColor = vec4( vColor, alpha );
 }
 `
