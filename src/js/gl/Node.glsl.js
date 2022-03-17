@@ -4,11 +4,14 @@ uniform float scale;
 
 attribute float pickId;
 attribute float visible;
+attribute float isHl;
 attribute vec3 color;
 attribute float size;
 
 varying vec3 vColor;
 varying float vShow;
+varying float vIsHl;
+varying float vSize;
 
 const float _f = 65536.0;
 vec3 unpackColor(float f){
@@ -20,11 +23,12 @@ vec3 unpackColor(float f){
 }
 
 void main(){
-    gl_PointSize = floor(size * scale);
+    vSize = gl_PointSize = floor(size * scale);
     gl_Position = projectionMatrix * modelViewMatrix * vec4( position.xy, 0, 1);
     vec3 diffuse = color;
     vColor = isPick ? unpackColor(pickId) : diffuse;
     vShow = visible;
+    vIsHl = isHl;
 }
 `
 export const NodeFragShader = `
@@ -34,23 +38,35 @@ uniform bool isPick;
 
 varying vec3 vColor;
 varying float vShow;
+varying float vSize;
+varying float vIsHl;
 
 bool decideShow(){
-    if(isPick){
-        return vShow != -1.0;
-    }else{
-        //(vShow == 1.0 && showMode == 1.0) || (vShow == 0.0 && showMode == 2.0) 
-        return vShow + showMode == 2.0;
-    }
+    return  showMode == 0.0 
+         || (showMode == 1.0 && vShow == 1.0) 
+         || (showMode == 2.0 && vShow == 0.0);  
 }
 
 void main(){
-    if(!decideShow()){
+    if(!isPick && !decideShow()){
         discard;
     }
     float len = length(gl_PointCoord - vec2(0.5));
     if(len > 0.5) discard;
-    float a = isPick ? 1.0 : 1.0 - smoothstep(0.45, 0.5, len);
-    gl_FragColor = vec4(vColor, a);
+    
+    vec3 color = vColor;
+    float a = 1.0;
+    if(!isPick){
+        if(vIsHl > 0.0){
+            float s = 2.5 / vSize; //border
+            float step1 = 0.5 - s * 2.0;
+            float weight = len < step1 ? 0.0 : clamp((len - step1) / s, 0.0, 1.0);
+            color = mix(vColor, vColor * 1.5, weight);
+        }else{
+            color = vColor;
+        }
+        a = 1.0 - smoothstep(0.45, 0.5, len);
+    }
+    gl_FragColor = vec4(color, a);
 }
 `

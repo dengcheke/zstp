@@ -1,7 +1,7 @@
 import {FullScreenQuad, Pass} from "three/examples/jsm/postprocessing/Pass";
 import {CopyShader} from "three/examples/jsm/shaders/CopyShader";
-import {CustomBlending, ShaderMaterial, UniformsUtils} from "three";
-import {GrayFragShader, GrayVertexShader} from "@/js/glsl/FilterGray.glsl";
+import {ShaderMaterial, UniformsUtils} from "three";
+import {GrayFragShader, GrayVertexShader} from "./FilterGray.glsl";
 
 export class GrayFilterPass extends Pass {
 

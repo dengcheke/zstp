@@ -4,12 +4,12 @@ import {
     Color,
     CustomBlending,
     DynamicDrawUsage,
+    EventDispatcher,
     Float32BufferAttribute,
     InstancedBufferAttribute,
     MathUtils,
     NoBlending,
     OneMinusSrcAlphaFactor,
-    OrthographicCamera,
     Points,
     QuadraticBezierCurve,
     Scene,
@@ -17,275 +17,67 @@ import {
     SrcAlphaFactor,
     StaticDrawUsage,
     Vector2,
-    Vector3,
-    WebGLRenderer,
     WebGLRenderTarget
 } from "three";
-import {CustomTrackballControls} from "./CustomTrackballControls";
+import {compute2DCurveDisFromStart, RGBToId, TagSet} from "./utils";
+import {EffectComposer} from 'three/examples/jsm/postprocessing/EffectComposer'
+import {RenderPass} from 'three/examples/jsm/postprocessing/RenderPass'
+import {LineSegments2} from 'three/examples/jsm/lines/LineSegments2'
+import {LineSegmentsGeometry} from 'three/examples/jsm/lines/LineSegmentsGeometry'
 import {forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY} from "d3-force";
-import {LineSegments2} from "three/examples/jsm/lines/LineSegments2";
-import {LineSegmentsGeometry} from "three/examples/jsm/lines/LineSegmentsGeometry";
-import {FrameFirer, FrameSchdEvent, FrameScheduler, TagSet} from "./GraphUtils";
-import {linkFragShader, linkVertexShader} from "./glsl/Link.glsl";
-import {forceBound, ForceBoundType} from "./ForceBound";
-import {DefaultLinkColor, DefaultLinkWidth, DefaultNodeColor, DefaultNodeSize} from "./config";
-import {EventDispatcher} from "./EventDispatcher";
-import {compute2DCurveDisFromStart, RGBToId} from "@/js/GraphUtils";
-import isObject from 'lodash/isObject'
-import {NodeFragShader, NodeVertexShader} from "@/js/glsl/Node.glsl";
-import {EffectComposer} from "three/examples/jsm/postprocessing/EffectComposer";
-import {RenderPass} from "three/examples/jsm/postprocessing/RenderPass";
-import {GrayFilterPass} from "@/js/GrayFilterPass";
+import {forceBound, ForceBoundType} from "./force-bound";
+import {linkFragShader, linkVertexShader} from "./gl/Link.glsl";
+import {GrayFilterPass} from "./gl/GrayFilterPass";
+import {NodeFragShader, NodeVertexShader} from "./gl/Node.glsl";
+import {isObject} from "lodash-es";
+import {FrameTrigger} from "./kg-renderer";
 
 const _color = new Color();
-const _vec3 = new Vector3();
 const _vec2 = new Vector2();
 const _box2 = new Box2();
 const _2dBzrCurve = new QuadraticBezierCurve();
-export const RenderOrder = Object.freeze({
-    Polygon: 100,
-    Polyline: 200,
-    Point: 300,
-})
-const DEFAULT_CONSTRAINT = Object.freeze({
-    minZoom: 0.001,
-    maxZoom: Infinity,
-    frustumSize: 1,
-})
-export const FrameTrigger = Object.freeze({
-    control: 'control', //可视化范围改变, 平移缩放等
-    simulateTick: 'simulateTick', //模拟过程
-    resize: 'resize',
-    hlChange: 'hlChange',
-    appearChange: 'appearChange',
-    flowLinkAnimation: 'flowLinkAnimation',
-    grayFilterChange: 'grayFilterChange',
-})
 
-export class GraphRenderContext extends EventDispatcher {
-    constructor(
-        canvas = document.createElement('canvas'),
-        scheduler = new FrameScheduler()
-    ) {
-        super();
-        this._initialized = false;
-        this.scheduler = scheduler;
-        this.state = {
-            dpr: window.devicePixelRatio,
-            width: 300,
-            height: 150,
-            aspect: 2,
-            stable: true,
-            resolution: null,
-            fullExtent: null, //整个范围(world coord)
-            viewExtent: null, //当前可视范围(world coord)
-        }
-        this.constraint = {...DEFAULT_CONSTRAINT};
-        this.curScene = null;
-        this.init(canvas);
-    }
-
-    init(canvas) {
-        if (this._initialized) return;
-        const renderer = new WebGLRenderer({
-            canvas, antialias: true, alpha: true
-        });
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.setClearColor('rgb(0,0,0)');
-        renderer.setClearAlpha(0);
-
-        const camera = new OrthographicCamera();
-        camera.near = 0;
-        camera.minDistance = 1;
-        camera.position.set(0, 0, 2000);
-        camera.lookAt(0, 0, -1);
-        camera.updateProjectionMatrix();
-
-        const control = new CustomTrackballControls(camera, canvas);
-
-        control.noRotate = true;
-        control.addEventListener('change', () => {
-
-            this.scheduler.requestFrame(FrameTrigger.control);
-        });
-        let _stableTimer = 0, smooth = new FrameFirer(() => {
-            this.scheduler.requestFrame(FrameTrigger.control);
-        });
-        control.addEventListener('start', () => {
-            this.state.stable = false;
-            clearTimeout(_stableTimer);
-            smooth.start();
-        });
-        control.addEventListener('end', () => {
-            clearTimeout(_stableTimer);
-            _stableTimer = setTimeout(() => {
-                this.state.stable = true;
-                smooth.stop();
-            }, 300)
-        });
-
-
-        this.scheduler.addEventListener(FrameSchdEvent.frameStart, () => {
-            control.update();
-            this.state.curExtent = this.control.curExtent;
-            //1 pixel = x world unit
-            this.state.resolution = (camera.top - camera.bottom) / this.state.height;
-        });
-        this.scheduler.addEventListener(FrameSchdEvent.render, ({tags}) => {
-            this.curScene?.render({ctx: this, tags});
-        });
-        Object.assign(this, {camera, canvas, control, renderer});
-        this._initialized = true;
-        return this;
-    }
-
-    setSize(w, h) {
-        const {state, renderer, canvas} = this;
-        state.aspect = w / h;
-        state.width = w;
-        state.height = h;
-        this._updateWithConstraint();
-        if (canvas.width !== w || canvas.height !== h) {
-            renderer.setSize(w, h, false);
-            this.scheduler.requestFrame(FrameTrigger.resize);
-        }
-        this.dispatchEvent({type: 'resize', state})
-        return this;
-    }
-
-    _updateWithConstraint() {
-        updateOrthographicCamera({
-            camera: this.camera,
-            frustumSize: this.constraint.frustumSize,
-            aspect: this.state.aspect
-        })
-        this.control.applyOrthographicConstrain2D(
-            this.constraint,
-            this.state.aspect
-        );
-        this.state.fullExtent = this.control.fullExtent;
-
-        function updateOrthographicCamera({camera, frustumSize, aspect}) {
-            camera.left = -frustumSize * aspect;
-            camera.right = frustumSize * aspect;
-            camera.top = frustumSize;
-            camera.bottom = -frustumSize;
-            camera.updateProjectionMatrix();
-        }
-    }
-
-    applyConstraint(constraint) {
-        this.constraint = constraint || {...DEFAULT_CONSTRAINT};
-        this._updateWithConstraint();
-    }
-
-    //切换场景
-    switchScene(newScene) {
-        if (newScene === this.curScene) return;
-        this.curScene?.deactive();
-        this.curScene = newScene;
-        newScene?.active(this);
-        this.scheduler.requestFrame(FrameTrigger.control);
-        return this;
-    }
-
-    //transform
-    /**
-     * 屏幕坐标转 ndc
-     * @param x 相对于canvas左上角的 x坐标
-     * @param y 相对于canvas左上角的 y坐标
-     * @returns {Vector2}
-     */
-    screenPosToNDC(x, y) {
-        const state = this.state;
-        const width = state.width,
-            height = state.height;
-        return new Vector2(
-            2 * x / width - 1,
-            -2 * y / height + 1
-        )
-    }
-
-    /**
-     * 屏幕坐标转世界坐标
-     * @param x 相对于canvas左上角的 x坐标
-     * @param y 相对于canvas左上角的 y坐标
-     * @returns {Vector3}
-     */
-    screenToWorld(x, y) {
-        const ndc = this.screenPosToNDC(x, y);
-        return new Vector3(ndc.x, ndc.y, 0).unproject(this.camera);
-    }
-
-    ndcToScreenPos(ndcX, ndcY) {
-        const state = this.state;
-        const width = state.width,
-            height = state.height;
-        return new Vector2(
-            (ndcX + 1) * width / 2,
-            (ndcY - 1) * height / -2
-        )
-    }
-
-    worldToScreen(worldX, worldY, worldZ) {
-        const ndc = _vec3.set(worldX, worldY, worldZ || 0).project(this.camera);
-        return this.ndcToScreenPos(ndc.x, ndc.y);
-    }
-
-    dispose() {
-        this.renderer.dispose();
-        this.control.dispose();
-    }
-}
+const DefaultNodeSize = 40;
+const DefaultNodeColor = 'black';
+const DefaultLinkColor = 'black';
+const DefaultLinkWidth = 4;
 
 const BufferUpdateFlag = Object.freeze({
-    dataChange: 'dataChange',//数据改变
-    geometryChange: 'geometryChange',//几何位置改变
-    nodeAppearChange: 'nodeAppearChange', //node 外观变化
-    linkAppearChange: 'linkAppearChange', //link 颜色变化, 宽度等,
-    nodeVisibleChange: 'nodeVisibleChange', //node 是否可见
-    linkVisibleChange: 'linkVisibleChange', //link 是否可见,
-    hlChange: 'hl-change'
+    dataChange: 100,//数据改变
+    geometryChange: 200,//几何位置改变
+    nodeAppearChange: 300, //node 外观变化, 颜色大小,
+    linkAppearChange: 350, //link 颜色变化, 宽度等,
+    nodeVisibleChange: 1000, //node 是否可见
+    linkVisibleChange: 1001, //link 是否可见,
 })
-//vshow=-1; visible = false; 所有情况下不显示
-//vshow=0; normal 不显示, toggle 显示
-//vshow=1; normal 显示, toggle 不显示
 const ShowMode = Object.freeze({
+    //0(关闭, vshow 不生效, 都显示); //用于pick
+    none: 0,
+    //1(正常模式, vshow=1 显示);
     normal: 1,
+    // 2(toggle, vshow=0 显示);
     toggle: 2
 })
+const RenderOrder = Object.freeze({
+    Polyline: 1,
+    Point: 2
+})
 
-export class GrayScaleComposer {
-    constructor(renderer) {
-        const composer = new EffectComposer(renderer);
-        const renderPass = new RenderPass();
-        const grayPass = new GrayFilterPass();
-        grayPass.renderToScreen = true;
-        composer.addPass(renderPass);
-        composer.addPass(grayPass);
-        Object.assign(this, {
-            composer,
-            renderPass,
-            grayPass
-        })
-    }
+//存储曲线的 归一化距离,
+//相同的cFactor, 归一化距离基本一致,
+const _2dBzrNormalDisCache = {
+    0: [0, 1],//直线
+};
 
-    dispose() {
-        const {renderTarget1, renderTarget2} = this.composer;
-        renderTarget2?.dispose();
-        renderTarget1?.dispose();
-    }
+const _BzrCurvePointCount = 25; //25个点, 24个线段
+const _BzrCurvePointIndex = new Array(_BzrCurvePointCount)
+    .fill(0).map((i, idx) => idx / (_BzrCurvePointCount - 1));
+const _StraightLinePointIndex = [0, 1];
 
-    setSize(width, height) {
-        if (width !== this.composer._width || height !== this.composer._height)
-            this.composer.setSize(width, height)
-    }
-}
-
-export class GraphScene extends EventDispatcher {
+export class KgScene extends EventDispatcher {
     constructor(name) {
         super();
-        this._ticks = 0;
+        this._ticks = 0; //模拟ticks
         this._gid = 1;
 
         this.name = name;
@@ -296,9 +88,10 @@ export class GraphScene extends EventDispatcher {
         this.grayParams = {
             enable: false,
             scale: 0,
-            _change: false, //scale值 是否变化
         }
+
         this.hlSet = new TagSet('highlight');//高亮
+
         this.constraint = {
             minZoom: 0.5,
             maxZoom: 6,
@@ -326,7 +119,7 @@ export class GraphScene extends EventDispatcher {
                 geoChange = true;
                 this.dataExtent.makeEmpty().setFromPoints(this.graphData.nodes);
                 this.updateFlag.add(BufferUpdateFlag.geometryChange);
-                this.requestFrame(FrameTrigger.simulateTick);
+                this.requestFrame('simulateTick');
             })
             .stop()
         this.addEventListener('before-render', function updateGeometry({ctx, tags}) {
@@ -369,11 +162,13 @@ export class GraphScene extends EventDispatcher {
                         link._inbound = true;
                         flag = calcLinkPoints(link) || flag;
                     } else {
+                        //直线
                         if (link.geometry.pointCount === 2) {
                             link._inbound = false;
                             link._tempVisible = false;
                             return;
                         }
+                        //曲线
                         //计算当前状态包围盒
                         calcLinkBox(link, linkBox);
                         if (viewBox.intersectsBox(linkBox)) {
@@ -415,23 +210,28 @@ export class GraphScene extends EventDispatcher {
 
                 function calcLinkPoints(link) {
                     if (link.geometry._version === version) return;
-                    const {source, target, geometry, symmetryLink} = link;
-                    const curve = _2dBzrCurve;
-                    curve.v0.set(source.x, source.y);
-                    curve.v1.copy(geometry.controlPoint);
-                    curve.v2.set(target.x, target.y);
-                    const points = curve.getPoints(geometry.pointCount - 1);
+                    const {source, target, geometry} = link;
+
                     let distances;
-                    {
-                        if (symmetryLink && symmetryLink.geometry._version === version) {
-                            //对称线无须重复计算
-                            distances = symmetryLink.geometry.distances;
-                        } else {
-                            distances = compute2DCurveDisFromStart(points, true);
-                        }
+                    const cacheKey = geometry.cFactor;
+                    if (_2dBzrNormalDisCache[cacheKey]) {
+                        distances = _2dBzrNormalDisCache[cacheKey];
+                    } else {
+                        const curve = _2dBzrCurve;
+                        curve.v0.set(source.x, source.y);
+                        curve.v1.copy(geometry.controlPoint);
+                        curve.v2.set(target.x, target.y);
+                        const _points = curve.getPoints(geometry.pointCount - 1);
+                        distances = compute2DCurveDisFromStart(_points, true);
+                        _2dBzrNormalDisCache[geometry.cFactor] = distances;
                     }
+                    //compute bzr point in gpu, we only set t here,
+                    const pointT = geometry.pointCount === 2
+                        ? _StraightLinePointIndex
+                        : _BzrCurvePointIndex
+
                     Object.assign(link.geometry, {
-                        points,//曲线点数组
+                        pointT,//曲线每个点对应贝塞尔参数 t
                         distances,//曲线点距起点距离数组,归一化
                         totalDis: distances.slice(-1)[0],//1
                         _version: version
@@ -466,15 +266,67 @@ export class GraphScene extends EventDispatcher {
             }
         }.bind(this))
         this._initSceneAndObj();
-        this.addEventListener('before-render', function checkHasLinkAnimation() {
-            if (!this.hasData) return;
-            const flow = this.graphData?.links.find(link => link.style?.flow);
-            if (flow) {
-                this.linkAnimation.start();
-            } else {
-                this.linkAnimation.stop();
+    }
+
+    _initSceneAndObj() {
+        const scene = new Scene();
+        const nodesMat = new ShaderMaterial({
+            blending: CustomBlending,
+            blendSrc: SrcAlphaFactor,
+            blendDst: OneMinusSrcAlphaFactor,
+            depthTest: false,
+            uniforms: {
+                scale: {value: 1},
+                isPick: {value: false},
+                showMode: {value: ShowMode.normal}
+            },
+            vertexShader: NodeVertexShader,
+            fragmentShader: NodeFragShader
+        });
+        const nodesObj = new Points(new BufferGeometry(), nodesMat);
+        nodesObj.renderOrder = RenderOrder.Point;
+        nodesObj.frustumCulled = false;
+        const linkMat = new ShaderMaterial({
+            blending: CustomBlending,
+            blendSrc: SrcAlphaFactor,
+            blendDst: OneMinusSrcAlphaFactor,
+            transparent: false,
+            depthTest: false,
+            depthWrite: false,
+            vertexShader: linkVertexShader,
+            fragmentShader: linkFragShader,
+            uniforms: {
+                lineWidthScale: {value: 1},
+                minAlpha: {value: 0.3},
+                isPick: {value: false},
+                uTrail: {
+                    value: {
+                        speed: 0.2,
+                        length: 0.35,
+                        cycle: 0.5,
+                    }
+                },
+                showMode: {value: ShowMode.normal},
+                time: {value: 0},
+                resolution: {value: new Vector2(window.innerWidth, window.innerHeight)}
             }
-        }.bind(this));
+        });
+        const linksObj = new LineSegments2(new LineSegmentsGeometry(), linkMat);
+        linksObj.renderOrder = RenderOrder.Polyline;
+        linksObj.frustumCulled = false;
+        scene.add(nodesObj, linksObj);
+        this.addEventListener('before-render', () => {
+            linkMat.uniforms.time.value = performance.now() / 1000;
+        });
+        this.addEventListener('dispose', () => {
+            [nodesObj, linksObj].map(({geometry, material}) => {
+                geometry.dispose();
+                material.dispose();
+            })
+        });
+        Object.assign(this, {
+            scene, nodesObj, linksObj
+        });
     }
 
     getRenderSizeScale() {
@@ -484,15 +336,23 @@ export class GraphScene extends EventDispatcher {
     }
 
     getGrayComposer() {
-        const ctx = this.renderCtx;
-        if (!ctx) throw new Error('renderCtx not exist, active this scene first');
-        if (!this.grayScaleComposer) {
-            this.grayScaleComposer = new GrayScaleComposer(this.renderCtx.renderer);
-            this.grayScaleComposer._off = ctx.addEventListener('resize', ({state}) => {
-                this.grayScaleComposer.setSize(state.width, state.height);
-            })
+        if (!this.grayComposer) {
+            this.addEventListener('resize', ({state}) => {
+                composer.setSize(state.width, state.height);
+            });
+            const composer = new EffectComposer(this.renderCtx.renderer);
+            const renderPass = new RenderPass();
+            const grayPass = new GrayFilterPass();
+            grayPass.renderToScreen = true;
+            composer.addPass(renderPass);
+            composer.addPass(grayPass);
+            this.grayComposer = {
+                composer,
+                renderPass,
+                grayPass
+            }
         }
-        return this.grayScaleComposer;
+        return this.grayComposer;
     }
 
     setGraphData(data) {
@@ -556,7 +416,7 @@ export class GraphScene extends EventDispatcher {
                         geo.pointCount = 2;
                     } else { //两边曲线
                         geo.cFactor = Math.ceil(Math.abs(i - halfIndex)) //控制点径向距离比例
-                        geo.pointCount = 40;
+                        geo.pointCount = _BzrCurvePointCount;
                     }
                     if ((geo.direction && i > halfIndex)
                         || (!geo.direction && i < halfIndex)
@@ -567,10 +427,6 @@ export class GraphScene extends EventDispatcher {
                     }
                     geo.flowOffset = Math.random() * 0.5;
                 }
-                group.forEach(child => {
-                    child.symmetryLink = group.find(i => i !== child
-                        && i.geometry.cFactor === child.geometry.cFactor)
-                })
             }
             return simulateLinks;
         }
@@ -581,89 +437,36 @@ export class GraphScene extends EventDispatcher {
         }
     }
 
-    _initSceneAndObj() {
-        const scene = new Scene();
-        const nodesMat = new ShaderMaterial({
-            blending: CustomBlending,
-            blendSrc: SrcAlphaFactor,
-            blendDst: OneMinusSrcAlphaFactor,
-            depthTest: false,
-            uniforms: {
-                scale: {value: 1},
-                isPick: {value: false},
-                showMode: {value: ShowMode.normal}
-            },
-            vertexShader: NodeVertexShader,
-            fragmentShader: NodeFragShader
-        });
-        const nodesObj = new Points(new BufferGeometry(), nodesMat);
-        nodesObj.renderOrder = RenderOrder.Point;
-        nodesObj.frustumCulled = false;
-        const linkMat = new ShaderMaterial({
-            blending: CustomBlending,
-            blendSrc: SrcAlphaFactor,
-            blendDst: OneMinusSrcAlphaFactor,
-            transparent: false,
-            depthTest: false,
-            depthWrite: false,
-            vertexShader: linkVertexShader,
-            fragmentShader: linkFragShader,
-            uniforms: {
-                lineWidthScale: {value: 1},
-                minAlpha: {value: 0.3},
-                isPick: {value: false},
-                uTrail: {
-                    value: {
-                        speed: 0.2,
-                        length: 0.35,
-                        cycle: 0.5,
-                    }
-                },
-                showMode: {value: ShowMode.normal},
-                time: {value: 0},
-                resolution: {value: new Vector2(window.innerWidth, window.innerHeight)}
-            }
-        });
-        const linksObj = new LineSegments2(new LineSegmentsGeometry(), linkMat);
-        linksObj.renderOrder = RenderOrder.Polyline;
-        linksObj.frustumCulled = false;
-        this.linkAnimation = new FrameFirer(() => {
-            linkMat.uniforms.time.value = performance.now() / 1000;
-            this.requestFrame(FrameTrigger.flowLinkAnimation);
+    beforeRender(args) {
+        this.dispatchEvent({
+            type: 'before-render',
+            ...args
         })
-        scene.add(nodesObj, linksObj);
-        this.addEventListener('dispose', () => {
-            [nodesObj, linksObj].map(({geometry, material}) => {
-                geometry.dispose();
-                material.dispose();
-            })
-        })
-        Object.assign(this, {
-            scene, nodesObj, linksObj
-        });
     }
 
-    active(renderCtx) {
+    afterRender(args) {
+        this.dispatchEvent({
+            type: 'after-render',
+            ...args
+        })
+    }
+
+    onAdd(renderCtx) {
         if (!renderCtx) return;
-        const {scheduler} = renderCtx;
-        this._off = scheduler.addEventListener(FrameSchdEvent.beforeRender, ({tags}) => {
-            this.dispatchEvent({
-                type: 'before-render',
-                ctx: renderCtx,
-                tags
-            });
-        });
         this.renderCtx = renderCtx;
+        this.getGrayComposer();
         this.hasData && this.simulate.restart();
         this.isActive = true;
+        this.requestFrame = (reason) => {
+            this.renderCtx.requestFrame(reason);
+        }
     }
 
-    deactive() {
-        this._off();
+    onRemove() {
         this.renderCtx = null;
-        this.linkAnimation?.stop();
         this.simulate.stop();
         this.isActive = false;
+        this.requestFrame = null;
     }
 
     _markFlag(flag) {
@@ -686,6 +489,7 @@ export class GraphScene extends EventDispatcher {
             [
                 {name: 'position', usage: DynamicDrawUsage, itemSize: 3},
                 {name: 'visible', usage: DynamicDrawUsage, itemSize: 1},
+                {name: 'isHl', usage: DynamicDrawUsage, itemSize: 1},
                 {name: 'size', usage: StaticDrawUsage, itemSize: 1},
                 {name: 'color', usage: StaticDrawUsage, itemSize: 3},
                 {name: 'pickId', usage: StaticDrawUsage, itemSize: 1},
@@ -697,14 +501,16 @@ export class GraphScene extends EventDispatcher {
         }
         if (dataChange || geoChange || appearChange || visibleChange) {
             const geometry = nodesObj.geometry;
+            const hlSet = new Set(this.hlSet.get());
             const posBuf = geometry.getAttribute('position').array,
                 colorBuf = geometry.getAttribute('color').array,
                 sizeBuf = geometry.getAttribute('size').array,
                 pickIdBuf = geometry.getAttribute('pickId').array,
-                visibleBuf = geometry.getAttribute('visible').array;
+                visibleBuf = geometry.getAttribute('visible').array,
+                hlBuf = geometry.getAttribute('isHl').array;
             for (let i = 0; i < nodes.length; i++) {
-                const node = nodes[i];
-                if (dataChange || visibleChange) {
+                const node = nodes[i], i3 = i * 3;
+                if (dataChange || visibleChange || appearChange) {
                     let visible;
                     if (node.visible === false) {
                         visible = -1;
@@ -714,37 +520,38 @@ export class GraphScene extends EventDispatcher {
                             : 1 //默认可见
                     }
                     visibleBuf[i] = visible;
+
+                    hlBuf[i] = hlSet.has(node) ? 1 : 0;
+
+                    const style = node.style || {};
+                    sizeBuf[i] = (style.size || DefaultNodeSize)
+                        + (visible >= 1 && hlBuf[i] ? 2.5 : 0);
+
+                    _color.set(style.color || DefaultNodeColor);
+                    colorBuf[i3] = _color.r;
+                    colorBuf[i3 + 1] = _color.g;
+                    colorBuf[i3 + 2] = _color.b;
                 }
-                const style = node.style || {};
                 if (dataChange || geoChange) {
-                    posBuf[i * 3] = node.x;
-                    posBuf[i * 3 + 1] = node.y;
+                    posBuf[i3] = node.x;
+                    posBuf[i3 + 1] = node.y;
                 }
                 if (dataChange) {
                     pickIdBuf[i] = node._gid;
                 }
-                if (dataChange || appearChange) {
-                    sizeBuf[i] = style.size || DefaultNodeSize;
-                    _color.set(style.color || DefaultNodeColor)
-                    colorBuf[i * 3] = _color.r;
-                    colorBuf[i * 3 + 1] = _color.g;
-                    colorBuf[i * 3 + 2] = _color.b;
-                }
-
             }
 
             if (geoChange || dataChange) {
                 geometry.getAttribute('position').needsUpdate = true;
             }
-            if (appearChange || dataChange) {
+            if (appearChange || dataChange || visibleChange) {
                 geometry.getAttribute('color').needsUpdate = true;
                 geometry.getAttribute('size').needsUpdate = true;
+                geometry.getAttribute('visible').needsUpdate = true;
+                geometry.getAttribute('isHl').needsUpdate = true;
             }
             if (dataChange) {
                 geometry.getAttribute('pickId').needsUpdate = true;
-            }
-            if (dataChange || visibleChange) {
-                geometry.getAttribute('visible').needsUpdate = true;
             }
         }
     }
@@ -770,18 +577,17 @@ export class GraphScene extends EventDispatcher {
                 const geometry = linksObj.geometry = new LineSegmentsGeometry();
                 [
                     //dynamic
-                    {name: "instanceStart", itemSize: 3, usage: DynamicDrawUsage},
-                    {name: "instanceEnd", itemSize: 3, usage: DynamicDrawUsage},
-                    {name: "instanceDisStart", itemSize: 1, usage: DynamicDrawUsage},
-                    {name: "instanceDisEnd", itemSize: 1, usage: DynamicDrawUsage},
+                    {name: "instance_Bzr_T", itemSize: 4, usage: DynamicDrawUsage}, //[before, source, target, after]t
+                    {name: "instance_C1_Dis", itemSize: 4, usage: DynamicDrawUsage},//控制点1, 归一化距离s, 归一化距离y,
+                    {name: "instance_C2_C3", itemSize: 4, usage: DynamicDrawUsage}, //控制点2 3
+
                     {name: "instanceVisible", itemSize: 1, usage: DynamicDrawUsage},
                     {name: "instanceLineWidth", itemSize: 1, usage: DynamicDrawUsage},
                     {name: "instanceFlowEnable", itemSize: 1, usage: DynamicDrawUsage},
                     //static
                     {name: "instanceLineColorStart", itemSize: 3, usage: StaticDrawUsage},
                     {name: "instanceLineColorEnd", itemSize: 3, usage: StaticDrawUsage},
-                    {name: "instanceLineDisOffset", itemSize: 1, usage: StaticDrawUsage},
-                    {name: "instancePickId", itemSize: 1, usage: StaticDrawUsage},
+                    {name: "instance_PickId_Offset", itemSize: 2, usage: StaticDrawUsage},
                 ].forEach(({name, itemSize, usage}) => {
                     const attr = new InstancedBufferAttribute(new Float32Array(segmentCount * itemSize), itemSize);
                     attr.setUsage(usage).name = name;
@@ -791,23 +597,23 @@ export class GraphScene extends EventDispatcher {
 
             //update buffer data
             const geometry = linksObj.geometry;
-            const posStartBuf = geometry.getAttribute('instanceStart').array,
-                posEndBuf = geometry.getAttribute('instanceEnd').array,
+            const tBuf = geometry.getAttribute('instance_Bzr_T').array,
+                c1_dis_buf = geometry.getAttribute('instance_C1_Dis').array,
+                c2_c3_Buf = geometry.getAttribute('instance_C2_C3').array,
                 lineWidthBuf = geometry.getAttribute('instanceLineWidth').array,
-                disStartBuf = geometry.getAttribute('instanceDisStart').array,
-                disEndBuf = geometry.getAttribute('instanceDisEnd').array,
                 visibleBuf = geometry.getAttribute('instanceVisible').array,
                 flowBuf = geometry.getAttribute('instanceFlowEnable').array,
                 colorStartBuf = geometry.getAttribute('instanceLineColorStart').array,
                 colorEndBuf = geometry.getAttribute('instanceLineColorEnd').array,
-                disOffsetBuf = geometry.getAttribute('instanceLineDisOffset').array,
-                pickBuf = geometry.getAttribute('instancePickId').array;
+                pick_Offset_Buf = geometry.getAttribute('instance_PickId_Offset').array;
             let cursor = 0, color1, color2;
             // for every link
             for (let i = 0; i < links.length; i++) {
                 const link = links[i];
                 const style = link.style || {},
-                    geometry = link.geometry, pickId = link._gid;
+                    geometry = link.geometry,
+                    pickId = link._gid,
+                    {source, target} = link;
                 let visible, flow = !!style.flow ? 1 : 0;
                 if (visibleChange) {
                     if (link.visible === false || link._tempVisible === false) {
@@ -818,41 +624,52 @@ export class GraphScene extends EventDispatcher {
                             : 1
                     }
                 }
-                const {points, distances, totalDis, flowOffset, pointCount} = geometry;
+                const {pointT, distances, flowOffset, pointCount, controlPoint} = geometry;
                 const lineWidth = style.width || 5;
                 if (dataChange || appearChange) {
                     [color1, color2] = getLinkColor(link);
                 }
                 // for every segment
-                for (let j = 0; j <= pointCount - 2; j++) {
+                for (let j = 0, limit = pointCount - 2; j <= limit; j++) {
+                    const c2 = cursor * 2, c3 = cursor * 3, c4 = cursor * 4;
                     if (dataChange || visibleChange) {
                         visibleBuf[cursor] = visible;
+                        if (visible === -1) continue;
                     }
                     if (link._inbound && (dataChange || geoChange)) {
-                        const s = points[j], t = points[j + 1];
-                        posStartBuf[cursor * 3] = s.x;
-                        posStartBuf[cursor * 3 + 1] = s.y;
+                        const c4_1 = c4 + 1, c4_2 = c4 + 2, c4_3 = c4 + 3;
 
-                        posEndBuf[cursor * 3] = t.x;
-                        posEndBuf[cursor * 3 + 1] = t.y;
+                        tBuf[c4] = j === 0 ? pointT[0] : pointT[j - 1];
+                        tBuf[c4_1] = pointT[j];
+                        tBuf[c4_2] = pointT[j + 1];
+                        tBuf[c4_3] = j === limit ? pointT[j + 1] : pointT[j + 2];
 
-                        disStartBuf[cursor] = (distances[j] / totalDis);
-                        disEndBuf[cursor] = (distances[j + 1] / totalDis);
+                        c1_dis_buf[c4] = source.x;
+                        c1_dis_buf[c4_1] = source.y;
+                        c1_dis_buf[c4_2] = distances[j];
+                        c1_dis_buf[c4_3] = distances[j + 1];
+
+                        c2_c3_Buf[c4] = controlPoint.x;
+                        c2_c3_Buf[c4_1] = controlPoint.y;
+                        c2_c3_Buf[c4_2] = target.x;
+                        c2_c3_Buf[c4_3] = target.y;
                     }
 
                     if (dataChange) {
-                        disOffsetBuf[cursor] = flowOffset;
-                        pickBuf[cursor] = pickId;
+                        pick_Offset_Buf[c2] = pickId;
+                        pick_Offset_Buf[c2 + 1] = flowOffset;
                     }
+
                     if (dataChange || appearChange) {
+                        const c3_1 = c3 + 1, c3_2 = c3 + 2;
                         _color.set(color1);
-                        colorStartBuf[cursor * 3] = _color.r;
-                        colorStartBuf[cursor * 3 + 1] = _color.g;
-                        colorStartBuf[cursor * 3 + 2] = _color.b;
+                        colorStartBuf[c3] = _color.r;
+                        colorStartBuf[c3_1] = _color.g;
+                        colorStartBuf[c3_2] = _color.b;
                         _color.set(color2);
-                        colorEndBuf[cursor * 3] = _color.r;
-                        colorEndBuf[cursor * 3 + 1] = _color.g;
-                        colorEndBuf[cursor * 3 + 2] = _color.b;
+                        colorEndBuf[c3] = _color.r;
+                        colorEndBuf[c3_1] = _color.g;
+                        colorEndBuf[c3_2] = _color.b;
                         lineWidthBuf[cursor] = lineWidth || DefaultLinkWidth;
                         flowBuf[cursor] = flow;
                     }
@@ -860,22 +677,24 @@ export class GraphScene extends EventDispatcher {
                     cursor += 1;
                 }
             }
+            if (dataChange) {
+                geometry.getAttribute('instance_PickId_Offset').needsUpdate = true;
+            }
             if (dataChange || geoChange) {
                 [
-                    'instanceStart', 'instanceEnd',
-                    'instanceDisStart', 'instanceDisEnd',
+                    'instance_Bzr_T',
+                    'instance_C2_C3',
+                    'instance_C1_Dis',
                 ].forEach(key => {
                     geometry.getAttribute(key).needsUpdate = true;
                 });
             }
-            if (dataChange) {
-                geometry.getAttribute('instanceLineDisOffset').needsUpdate = true;
-                geometry.getAttribute('instancePickId').needsUpdate = true;
-            }
             if (dataChange || appearChange) {
-                ['instanceLineColorStart',
+                [
+                    'instanceLineColorStart',
                     'instanceLineColorEnd',
-                    'instanceFlowEnable'].forEach(key => {
+                    'instanceFlowEnable'
+                ].forEach(key => {
                     geometry.getAttribute(key).needsUpdate = true;
                 })
             }
@@ -902,7 +721,7 @@ export class GraphScene extends EventDispatcher {
         this._updateNodeBufferData(decideShow);
         this._updateLinkBufferData(decideShow);
         this.updateFlag.clear();
-        return this;
+        return true;
     }
 
     _changePickMode(pick) {
@@ -947,38 +766,43 @@ export class GraphScene extends EventDispatcher {
         return obj;
     }
 
-    requestFrame(reason) {
-        if (!this.renderCtx) throw new Error('renderCtx not exist, active this scene first')
-        this.renderCtx?.scheduler.requestFrame(reason);
-    }
-
     render({ctx, tags}) {
-        if (!this.isActive || !this.hasData || !this._ticks) return;
-        this._updateBufferData();
+        if (!this.isActive || !this.hasData || !this._ticks) return;//_ticks=0 代表没开始模拟
+        const update = this._updateBufferData();
 
-        const {linksObj, nodesObj, grayParams, scene} = this;
+        const {linksObj, nodesObj, grayParams, scene} = this, self = this;
 
         const {renderer, camera, canvas, state} = ctx;
         renderer.autoClear = false;
-        renderer.setRenderTarget(null);
-        renderer.clear();
-
+        this._changePickMode(false);
         const zoomScale = this.getRenderSizeScale();
         nodesObj.material.uniforms.scale.value = zoomScale * state.dpr;
         linksObj.material.uniforms.resolution.value.set(canvas.width, canvas.height);
         linksObj.material.uniforms.lineWidthScale.value = zoomScale * state.dpr;
 
-        const normalAlpha = 0.2, emphasizeAlpha = 0.6;
+        const hlLinks = new Set(this.hlSet.get(i => i?.isLink));
+        const hlNodes = new Set(this.hlSet.get(i => i?.isNode));
+        const hlSize = hlLinks.size + hlNodes.size;
 
-        const {enable, scale, _change} = grayParams;
-        if (enable && (scale || _change)) {
-            const hlLinks = new Set(this.hlSet.get(i => i?.isLink));
-            const hlNodes = new Set(this.hlSet.get(i => i?.isNode));
-            const hlSize = hlLinks.size + hlNodes.size;
-            if (!scale && !hlSize) {
-                renderInNormal();
+        const normalAlpha = 0.5, emphasizeAlpha = 0.8;
+        const {enable, scale} = grayParams;
+
+        if (!hlSize) {
+            setShowMode(ShowMode.normal);
+            setLinkAlpha(normalAlpha);
+            if (enable && scale) { // 对全部执行grayfilter
+                renderGray();
             } else {
-                if (hlSize) {
+                renderer.render(scene, camera);
+            }
+        } else {
+            //高亮强调的后渲染, zIndex 在上
+
+            //pass 1, 渲染非高亮
+            //1.1 更新可见性, 高亮为1,
+            {
+                if (tags.has(FrameTrigger.hlChange) || update) {
+                    //如果update=true, 会重置buffer到基础状态, 这里需要重新更改
                     this._markFlag(BufferUpdateFlag.nodeVisibleChange);
                     this._markFlag(BufferUpdateFlag.linkVisibleChange);
                     this._updateBufferData(({node, link}) => {
@@ -989,33 +813,39 @@ export class GraphScene extends EventDispatcher {
                         }
                     })
                 }
-
-                const grayComposer = this.getGrayComposer(ctx);
-                checkComposer(grayComposer);
-                const {composer, renderPass, grayPass} = grayComposer;
-                renderPass.scene = this.scene;
-                renderPass.camera = camera;
-                grayPass.grayScale = scale;
-                grayPass.opacity = 1 - scale * 0.8;
-                setLinkAlpha(normalAlpha);
-                setShowMode(hlSize ? ShowMode.toggle : ShowMode.normal);
-                composer.render();
-                if (hlSize) {
-                    setLinkAlpha(normalAlpha + (emphasizeAlpha - normalAlpha) * scale);
-                    setShowMode(ShowMode.normal);
-                    renderer.render(this.scene, camera);
+            }
+            //1.2 对非高亮部分执行 grayFilter
+            {
+                //先画非高亮
+                setShowMode(ShowMode.toggle);
+                if (enable && scale) {
+                    setLinkAlpha(normalAlpha);
+                    renderGray();
+                } else {
+                    setLinkAlpha(normalAlpha);
+                    renderer.render(scene, camera);
                 }
             }
-
-            grayParams._change = false;
-        } else {
-            renderInNormal();
+            //1.3 画高亮部分
+            {
+                setLinkAlpha(normalAlpha + (emphasizeAlpha - normalAlpha) * scale);
+                setShowMode(ShowMode.normal);
+                renderer.render(this.scene, camera);
+            }
         }
 
-        function renderInNormal() {
-            setLinkAlpha(normalAlpha)
-            setShowMode(ShowMode.normal);
-            renderer.render(scene, camera);
+        const flow = this.graphData?.links.find(link => link.style?.flow);
+        flow && this.requestFrame('flow link');
+
+        function renderGray() {
+            const grayComposer = self.getGrayComposer();
+            const {composer, renderPass, grayPass} = grayComposer;
+            checkComposer(grayComposer.composer);
+            renderPass.scene = self.scene;
+            renderPass.camera = camera;
+            grayPass.grayScale = scale;
+            grayPass.opacity = 1 - scale * 0.8;
+            composer.render();
         }
 
         function setShowMode(mode) {
@@ -1076,12 +906,8 @@ export class GraphScene extends EventDispatcher {
 
     setGrayScale(i) {
         if (i === undefined) throw new Error('grayscale is undefined')
-        const cur = MathUtils.clamp(i, 0, 1);
-        this.grayParams._change = this.grayParams.scale !== cur;
-        this.grayParams.scale = cur;
-        if (this.grayParams._change) {
-            this.requestFrame(FrameTrigger.grayFilterChange)
-        }
+        this.grayParams.scale = MathUtils.clamp(i, 0, 1);
+        this.requestFrame(FrameTrigger.grayFilterChange);
     }
 
     markAppearChange(node, link) {

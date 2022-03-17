@@ -1,17 +1,17 @@
 import './style.css'
-import {FrameTrigger, GraphRenderContext, GraphScene} from "@/js/ZstpGraph";
-import {LabelCanvasRenderer, measureText} from "@/js/LabelCanvasRenderer";
-import {FrameSchdEvent} from "@/js/GraphUtils";
-import {Color, MathUtils, Vector2, Vector3} from "three";
-import debounce from "lodash/debounce";
-import throttle from "lodash/throttle";
 import TWEEN from "@tweenjs/tween.js";
-import {nodeDragHelper, on} from "@/js/utils";
+import {FrameTrigger, KgRenderer} from "@/js/kg-renderer";
+import {KgScene} from "@/js/kg-scene";
+import {addResizeListener, on} from "@well24/utils";
+import throttle from "lodash-es/throttle";
+import {Color, MathUtils, Vector2, Vector3} from "three";
+import {nodeDragHelper} from "@/js/utils";
+import {LabelCanvasRenderer, measureText} from "@/js/label-canvas-renderer";
 
 const PointerAction = Object.freeze({
-    None: 0,
-    Drag: 1,
-});
+    none: 0,
+    drag: 1,
+})
 
 function getTestGraphData() {
     const N = 500;
@@ -157,25 +157,18 @@ function grayFilterAnimation(from, to, {
     }
 }
 
+window.onload = async () => {
 
-window.onload = () => {
-    const wrapper = document.body.querySelector('#app');
+
+    const el = document.body.querySelector('#app');
     const canvas = document.body.querySelector('#graph');
     const labelCanvas = document.body.querySelector('#label');
 
-    //init
-    const width = window.innerWidth, height = window.innerHeight;
-    const renderCtx = new GraphRenderContext(canvas);
-    const scheduler = renderCtx.scheduler;
-    const scene = new GraphScene("main");
-
-    //labels
-    const labelCanvasRenderer = new LabelCanvasRenderer({canvas: labelCanvas});
-    renderCtx.addEventListener('resize', ({state}) => {
-        labelCanvasRenderer.setSize(state.width, state.height);
-    });
-    scheduler.addEventListener(FrameSchdEvent.render, ({tags}) => {
-        if (!scene.hasData) return;
+    const view = new KgRenderer(canvas);
+    const labelRenderer = new LabelCanvasRenderer({canvas: labelCanvas});
+    const kg = new KgScene();
+    kg.addEventListener('after-render', ({tags}) => {
+        if (!kg.hasData) return;
         const posChange = [
             FrameTrigger.simulateTick,
             FrameTrigger.control,
@@ -183,16 +176,16 @@ window.onload = () => {
         ].find(reason => tags.has(reason));
         const hlChange = tags.has(FrameTrigger.hlChange);
         const grayChange = tags.has(FrameTrigger.grayFilterChange);
-        const {enable, scale} = scene.grayParams;
+        const {enable, scale} = kg.grayParams;
         if (!(posChange || grayChange || hlChange)) return;
 
-        const hlItems = new Set(scene.hlSet.get());
-        const {nodes, links} = scene.graphData;
+        const hlItems = new Set(kg.hlSet.get());
+        const {nodes, links} = kg.graphData;
         const normalAlpha = 0.8;
         const alpha = hlItems.size
             ? MathUtils.clamp(1 - scale * 0.9, 0.1, 0.5)
             : MathUtils.clamp(1 - scale, 0.1, normalAlpha);
-        const viewBox = renderCtx.state.curExtent;
+        const viewBox = view.state.curExtent;
         nodes.forEach(node => {
             if (!node.labelInfo) node.labelInfo = {};
             const info = node.labelInfo;
@@ -232,7 +225,7 @@ window.onload = () => {
             });
 
             if (posChange) {
-                const pos = renderCtx.worldToScreen(info.worldPosition[0], info.worldPosition[1]);
+                const pos = view.worldToScreen(info.worldPosition[0], info.worldPosition[1]);
                 label.x = pos.x - info.size[0] * 0.5;
                 label.y = pos.y - info.size[1] * 0.5;
             }
@@ -247,143 +240,152 @@ window.onload = () => {
             }
             return label
         }).filter(Boolean);
-        labelCanvasRenderer.drawLabels(labels);
+        labelRenderer.drawLabels(labels);
     })
+    view.use(kg).setConstraint(kg.constraint);
 
-    //events
-    on(window, 'resize', debounce(() => {
-        const w = window.innerWidth, h = window.innerHeight;
-        renderCtx.setSize(w, h);
-    }, 100, {leading: false, trailing: true}))
-    //call once at init
-    renderCtx.setSize(width, height);
+    //resize listen
+    {
+        const width = el.clientWidth, height = el.clientHeight;
+        view.setSize(width, height);
+        addResizeListener(el, throttle(entry => {
+            const {contentRect} = entry;
+            view.setSize(contentRect.width, contentRect.height);
+            labelRenderer.setSize(contentRect.width, contentRect.height);
+        }, 200, {leading: false, trailing: true}));
+    }
 
-    //actions
-    scene.enableGrayFilter();
-    let _curAnimation = null, _timer = null;
-    let curPointerItem = null, curPointerAction = PointerAction.None;
-    on(wrapper,'pointermove', throttle(event => {
-        if (curPointerAction === PointerAction.Drag) return;
-        if (renderCtx.state.stable) {
+    let curPointerItem = null;
+    let curPointerAction = PointerAction.none;
+    //hitTest
+    {
+        let _curAnimation = null, _resetTimer = null;
+        on(el, 'pointermove', throttle(event => {
+            if (curPointerAction === PointerAction.drag) return;
+            if (!view.state.stable) return;
+            const scene = view.curScene;
+            if (!scene) return;
+
             const x = event.clientX, y = event.clientY;
+            //optimize, 如果之前选中是节点, 检查是否在之前节点范围内,
             if (curPointerItem?.isNode) {
                 const cur = curPointerItem;
-                const pos = renderCtx.worldToScreen(cur.x, cur.y);
+                const pos = view.worldToScreen(cur.x, cur.y);
                 const dis = Math.hypot(pos.x - x, pos.y - y);
-                if (dis <= scene.getRenderSizeScale() * (cur.style?.size || 10) * 0.5) return;
+                if (dis <= scene.getRenderSizeScale() * cur.style?.size * 0.5) return;
             }
-            const before = !!curPointerItem;
-            scene.clearHighlight();
-            const item = curPointerItem = scene.pick(x, y) || null;
-            const cur = !!item;
 
-            if (item) {
-                const items = new Set();
-                items.add(item);
-                if(item.isNode){
-                    scene.graphData.links.forEach(link => {
-                        if (link.target === item || link.source === item) {
-                            items.add(link);
-                            items.add(link.source);
-                            items.add(link.target);
-                        }
-                    })
-                }else{
-                    items.add(item.source);
-                    items.add(item.target);
-                }
-                scene.highlight(Array.from(items));
-            }
-            if (before !== cur) {
-                if (before) {
-                    _timer = setTimeout(() => _doGrayAnim(0), 400)
+            const beforeHas = !!curPointerItem;
+            const item = curPointerItem = view.pick(x, y);
+            const curHas = !!item;
+
+            scene.clearHighlight();
+            item && scene.highlight(_getRelative(item));
+
+            if (beforeHas !== curHas) {
+                if (beforeHas) {
+                    _resetTimer = setTimeout(() => _doGrayAnim(0.01), 250);
                 } else {
-                    clearTimeout(_timer);
-                    _doGrayAnim(1);
+                    clearTimeout(_resetTimer);
+                    _doGrayAnim(0.99);
                 }
             }
 
             function _doGrayAnim(to) {
                 _curAnimation?.stop();
                 _curAnimation = grayFilterAnimation(scene.grayParams.scale, to);
-                _curAnimation?.onUpdate(t => scene.setGrayScale(t)).start();
+                _curAnimation?.onStart(() => view.curScene?.enableGrayFilter())
+                    .onUpdate(t => view.curScene?.setGrayScale(t))
+                    .start();
             }
-        }
-    }, 200, {leading: false, trailing: true}))
-    on(wrapper,'pointerleave', () => {
-        if (curPointerItem) {
-            scene.clearHighlight();
-        }
-        curPointerItem = null;
-    });
-    const resetNode = (node) => {
-        if (!node) return;
-        node.x = node.fx || node.x;
-        node.y = node.fy || node.y;
-        delete node.fx;
-        delete node.fy;
+
+            function _getRelative(item) {
+                const items = new Set();
+                items.add(item);
+                if (item.isNode) {
+                    view.curScene.graphData.links.forEach(link => {
+                        if (link.target === item || link.source === item) {
+                            items.add(link);
+                            items.add(link.source);
+                            items.add(link.target);
+                        }
+                    })
+                } else {
+                    items.add(item.source);
+                    items.add(item.target);
+                }
+                return Array.from(items);
+            }
+        }, 200, {leading: false, trailing: true}));
     }
     //drag
-    nodeDragHelper(wrapper, {
-        init: () => {
-            let _offset = new Vector3(),
-                _end = new Vector3();
-            return {
-                reset: function () {
-                    resetNode(this._curDragNode);
-                    curPointerAction = PointerAction.None;
-                    this._curDragNode = null;
-                    _offset.set(0, 0, 0);
-                    _end.set(0, 0, 0);
-                },
-                _curDragNode: null,//当前拖拽点
-                _offset,
-                _end,
-            }
-        },
-        onPosChange: ({e, type, state}) => {
-            if (e.button === 2) return false; //右键
-            let {_offset, _end} = state;
-            const x = e.clientX, y = e.clientY;
-            const node = curPointerItem;
-            if (node !== state._curDragNode) state.reset();
-            if (!node || !node.isNode) return;
-            const simulate = renderCtx.curScene?.simulate;
-            if (type === 'start') {
-                curPointerAction = PointerAction.drag;
-                state._curDragNode = node;
-                node.fx = node.x;
-                node.fy = node.y;
-                const world = renderCtx.screenToWorld(x, y)
-                _offset.set(node.x - world.x, node.y - world.y, 0);
-                return true;// return true to begin drag
-            } else if (type === 'move') {
-                let target = simulate.alphaTarget()
-                target = Math.max(target, Math.min(10 / scene.graphData.nodes.length, 0.1));
-                simulate && simulate.alphaTarget(target).restart();
-                _end.addVectors(renderCtx.screenToWorld(x, y), _offset);
-                node.fx = _end.x;
-                node.fy = _end.y;
-            } else {
-                simulate && simulate.alphaTarget(0);
-                state.reset();
-            }
-        },
-        onLeave: (cancel, state) => {
-            state.reset();
-            cancel();
-            const simulate = renderCtx.curScene?.simulate;
-            if (!simulate) return;
-            simulate.alphaTarget(0);
+    {
+        const resetNode = (node) => {
+            if (!node) return;
+            node.x = node.fx || node.x;
+            node.y = node.fy || node.y;
+            delete node.fx;
+            delete node.fy;
         }
-    });
+        nodeDragHelper(el, {
+            init: () => {
+                let _offset = new Vector3(),
+                    _end = new Vector3();
+                return {
+                    reset: function () {
+                        resetNode(this._curDragNode);
+                        curPointerAction = PointerAction.None;
+                        this._curDragNode = null;
+                        _offset.set(0, 0, 0);
+                        _end.set(0, 0, 0);
+                    },
+                    _curDragNode: null,//当前拖拽点
+                    _offset,
+                    _end,
+                }
+            },
+            onPosChange: ({e, type, state}) => {
+                if (e.button === 2) return false; //右键
+                let {_offset, _end} = state;
+                const x = e.clientX, y = e.clientY;
+                const node = curPointerItem;
+                if (node !== state._curDragNode) state.reset();
+                if (!node || !node.isNode) return false;
+                const scene = view.curScene;
+                if (!scene) return false;
+                const simulate = scene?.simulate;
+                if (type === 'start') {
+                    curPointerAction = PointerAction.drag;
+                    state._curDragNode = node;
+                    node.fx = node.x;
+                    node.fy = node.y;
+                    const world = view.screenToWorld(x, y)
+                    _offset.set(node.x - world.x, node.y - world.y, 0);
+                    view.control.noPan = true;
+                    return true;// return true to begin drag
+                } else if (type === 'move') {
+                    let target = simulate.alphaTarget()
+                    target = Math.max(target, Math.min(10 / kg.graphData.nodes.length, 0.1));
+                    simulate && simulate.alphaTarget(target).restart();
+                    _end.addVectors(view.screenToWorld(x, y), _offset);
+                    node.fx = _end.x;
+                    node.fy = _end.y;
+                } else {
+                    simulate && simulate.alphaTarget(0);
+                    view.control.noPan = false;
+                    state.reset();
+                }
+            },
+            onLeave: (cancel, state) => {
+                state.reset();
+                cancel();
+                const simulate = view.curScene?.simulate;
+                if (!simulate) return;
+                simulate.alphaTarget(0);
+            }
+        })
+    }
 
-
-    //set data
-    renderCtx.switchScene(scene);
-    renderCtx.applyConstraint(scene.constraint);
-    const data = getTestGraphData();
-    const infoDiv = document.body.querySelector('#info');
-    infoDiv.innerHTML = `<p>nodes:${data.nodes.length}</p><p>links:${data.links.length}</p>`
-    scene.setGraphData(data);
+    const data = await getTestGraphData();
+    kg.setGraphData(data);
 }
