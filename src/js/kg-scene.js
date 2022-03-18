@@ -38,8 +38,8 @@ const _box2 = new Box2();
 const _2dBzrCurve = new QuadraticBezierCurve();
 
 const DefaultNodeSize = 40;
-const DefaultNodeColor = 'black';
-const DefaultLinkColor = 'black';
+const DefaultNodeColor = 'white';
+const DefaultLinkColor = 'red';
 const DefaultLinkWidth = 4;
 
 const BufferUpdateFlag = Object.freeze({
@@ -93,9 +93,9 @@ export class KgScene extends EventDispatcher {
         this.hlSet = new TagSet('highlight');//高亮
 
         this.constraint = {
-            minZoom: 0.5,
+            minZoom: 0.2,
             maxZoom: 6,
-            frustumSize: 1000,
+            frustumSize: 1500,
         };
         this.renderCtx = null;
 
@@ -315,9 +315,6 @@ export class KgScene extends EventDispatcher {
         linksObj.renderOrder = RenderOrder.Polyline;
         linksObj.frustumCulled = false;
         scene.add(nodesObj, linksObj);
-        this.addEventListener('before-render', () => {
-            linkMat.uniforms.time.value = performance.now() / 1000;
-        });
         this.addEventListener('dispose', () => {
             [nodesObj, linksObj].map(({geometry, material}) => {
                 geometry.dispose();
@@ -337,9 +334,6 @@ export class KgScene extends EventDispatcher {
 
     getGrayComposer() {
         if (!this.grayComposer) {
-            this.addEventListener('resize', ({state}) => {
-                composer.setSize(state.width, state.height);
-            });
             const composer = new EffectComposer(this.renderCtx.renderer);
             const renderPass = new RenderPass();
             const grayPass = new GrayFilterPass();
@@ -779,18 +773,19 @@ export class KgScene extends EventDispatcher {
         nodesObj.material.uniforms.scale.value = zoomScale * state.dpr;
         linksObj.material.uniforms.resolution.value.set(canvas.width, canvas.height);
         linksObj.material.uniforms.lineWidthScale.value = zoomScale * state.dpr;
+        linksObj.material.uniforms.time.value = performance.now() / 1000;
 
         const hlLinks = new Set(this.hlSet.get(i => i?.isLink));
         const hlNodes = new Set(this.hlSet.get(i => i?.isNode));
         const hlSize = hlLinks.size + hlNodes.size;
 
-        const normalAlpha = 0.5, emphasizeAlpha = 0.8;
+        const normalAlpha = 0.3, emphasizeAlpha = 0.6;
         const {enable, scale} = grayParams;
 
         if (!hlSize) {
             setShowMode(ShowMode.normal);
             setLinkAlpha(normalAlpha);
-            if (enable && scale) { // 对全部执行grayfilter
+            if (enable && scale) {
                 renderGray();
             } else {
                 renderer.render(scene, camera);
@@ -840,7 +835,10 @@ export class KgScene extends EventDispatcher {
         function renderGray() {
             const grayComposer = self.getGrayComposer();
             const {composer, renderPass, grayPass} = grayComposer;
-            checkComposer(grayComposer.composer);
+            const state = ctx.state;
+            if (composer._width !== state.width || composer._height !== state.height) {
+                composer.setSize(state.width, state.height);
+            }
             renderPass.scene = self.scene;
             renderPass.camera = camera;
             grayPass.grayScale = scale;
@@ -855,11 +853,6 @@ export class KgScene extends EventDispatcher {
 
         function setLinkAlpha(alpha) {
             linksObj.material.uniforms.minAlpha.value = alpha;
-        }
-
-        function checkComposer(composer) {
-            const state = ctx.state;
-            composer.setSize(state.width, state.height);
         }
     }
 

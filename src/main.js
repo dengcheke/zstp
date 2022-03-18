@@ -14,7 +14,7 @@ const PointerAction = Object.freeze({
 })
 
 function getTestGraphData() {
-    const N = 500;
+    const N = 1000;
     let nid = 1;
     let lid = 1;
     const nodeMap = {};
@@ -66,7 +66,7 @@ function getTestGraphData() {
             }
         }
         res.push(link);
-        for (let i = 1, count = 1 || Math.random() * 5 >> 0; i <= count; i++) {
+        for (let i = 1, count = Math.random() * 5 >> 0; i <= count; i++) {
             const swap = randomBoolean();
             const g = randomBoolean();
             let id = lid++;
@@ -94,6 +94,7 @@ function getTestGraphData() {
         }
         return res
     }).flat().filter(Boolean)
+
     return {nodes, links}
 
     function randomColor() {
@@ -158,8 +159,6 @@ function grayFilterAnimation(from, to, {
 }
 
 window.onload = async () => {
-
-
     const el = document.body.querySelector('#app');
     const canvas = document.body.querySelector('#graph');
     const labelCanvas = document.body.querySelector('#label');
@@ -167,7 +166,8 @@ window.onload = async () => {
     const view = new KgRenderer(canvas);
     const labelRenderer = new LabelCanvasRenderer({canvas: labelCanvas});
     const kg = new KgScene();
-    kg.addEventListener('after-render', ({tags}) => {
+    //render labels
+    kg.addEventListener('after-render', throttle(({tags}) => {
         if (!kg.hasData) return;
         const posChange = [
             FrameTrigger.simulateTick,
@@ -241,7 +241,7 @@ window.onload = async () => {
             return label
         }).filter(Boolean);
         labelRenderer.drawLabels(labels);
-    })
+    }),100,{leading:false,trailing:true});
     view.use(kg).setConstraint(kg.constraint);
 
     //resize listen
@@ -388,4 +388,10 @@ window.onload = async () => {
 
     const data = await getTestGraphData();
     kg.setGraphData(data);
+
+    const div = document.body.querySelector('#info');
+    div.innerHTML = `
+        <p>nodes: ${data.nodes.length}</p>
+        <p>links: ${data.links.length}</p>
+    `
 }

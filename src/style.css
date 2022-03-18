@@ -41,3 +41,9 @@ canvas#label {
   z-index: 2;
   pointer-events: none;
 }
+div#info{
+  color: black;
+  position: absolute;
+  right: 20px;
+  top: 20px;
+}

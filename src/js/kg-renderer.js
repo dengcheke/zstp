@@ -20,11 +20,6 @@ export const FrameTrigger = Object.freeze({
     grayFilterChange: 'grayFilterChange',
 });
 
-const KgMapEvent = Object.freeze({
-    beforeRender: 'beforeRender',
-    afterRender: 'afterRender',
-});
-
 export class KgRenderer extends EventDispatcher {
     constructor(canvas = document.createElement('canvas')) {
         super();
@@ -85,13 +80,6 @@ export class KgRenderer extends EventDispatcher {
                 this.state.stable = true;
                 smoothTransition.stop();
             }, 300)
-        });
-
-        this.addEventListener(KgMapEvent.beforeRender, () => {
-            control.update();
-            this.state.curExtent = this.control.curExtent;
-            //1 pixel = x world unit
-            this.state.resolution = (camera.top - camera.bottom) / this.state.height;
         });
 
         Object.assign(this, {camera, canvas, control, renderer});
@@ -214,9 +202,16 @@ export class KgRenderer extends EventDispatcher {
             tags.clear();
 
             this._isRendering = true;
-            this.dispatchEvent({type: KgMapEvent.beforeRender, _tags});
-            this.renderer.setRenderTarget(null);
-            this.renderer.clear();
+            //before render
+            {
+                const {control,camera,state,renderer} = this;
+                control.update();
+                state.curExtent = control.curExtent;
+                //1 pixel = x world unit
+                state.resolution = (camera.top - camera.bottom) / state.height;
+                renderer.setRenderTarget(null);
+                renderer.clear();
+            }
 
             const params = {ctx: this, tags: _tags};
 
@@ -227,12 +222,10 @@ export class KgRenderer extends EventDispatcher {
             } finally {
                 this._schded = false;
                 this._isRendering = false;
-                tags.clear();
-                this.dispatchEvent({type: KgMapEvent.afterRender, _tags});
-            }
-            if (this._needAskNextFrame) {
-                this._needAskNextFrame = false;
-                this.requestFrame('ask next frame');
+                if (this._needAskNextFrame) {
+                    this._needAskNextFrame = false;
+                    this.requestFrame('ask next frame');
+                }
             }
         })
     }
