@@ -37,7 +37,7 @@ export class KgRenderer extends EventDispatcher {
             stable: true,
             resolution: null,
             fullExtent: null, //整个范围(world coord)
-            viewExtent: null, //当前可视范围(world coord)
+            curExtent: null, //当前可视范围(world coord)
         }
         //约束
         this.constraint = {...DEFAULT_CONSTRAINT};

@@ -167,7 +167,7 @@ window.onload = async () => {
     const labelRenderer = new LabelCanvasRenderer({canvas: labelCanvas});
     const kg = new KgScene();
     //render labels
-    kg.addEventListener('after-render', throttle(({tags}) => {
+    const drawLabel = ({tags}) => {
         if (!kg.hasData) return;
         const posChange = [
             FrameTrigger.simulateTick,
@@ -186,52 +186,45 @@ window.onload = async () => {
             ? MathUtils.clamp(1 - scale * 0.9, 0.1, 0.5)
             : MathUtils.clamp(1 - scale, 0.1, normalAlpha);
         const viewBox = view.state.curExtent;
-        nodes.forEach(node => {
-            if (!node.labelInfo) node.labelInfo = {};
-            const info = node.labelInfo;
-            info.worldPosition = [node.x, node.y];
-            const text = node.label?.text;
-            if (info.text !== text) {
-                info.text = text;
-                info.size = text ? measureText(text, node.label.font) : null;
-            }
-        });
-        links.forEach(link => {
-            if (!link.labelInfo) link.labelInfo = {};
-            let info = link.labelInfo;
-            const labelPos = link.geometry.labelPos;
-            if (!labelPos) return;
-            info.worldPosition = [labelPos.x, labelPos.y];  //label世界坐标
-            const text = link.label?.text;
-            if (info.text !== text) {
-                info.text = text;
-                info.size = text ? measureText(text, link.label?.font) : null
-            }
-        });
+
         const _v2 = new Vector2(), _color = new Color();
-        const labels = [nodes, links].flat().map(item => {
-            const info = item.labelInfo;
-            if (!info || !info.text) return;
-            if (!viewBox.containsPoint(_v2.set(info.worldPosition[0], info.worldPosition[1]))) return;
-            !item._labelIns && (item._labelIns = {});
-            const label = item._labelIns;
+        //一开始, 所有标签挤在一起, 四叉树性能低下, 减少标签数量
+        const samplerRatio = Math.min(kg._ticks / 300, 1);
+        const totalLength = nodes.length + links.length;
+        const labels = [nodes, links].flat().map((item, idx) => {
+            if (idx / totalLength > samplerRatio) return;
+            if (item.visible === false) return;
+            let worldPos;
+            if (item.isNode) {
+                worldPos = [item.x, item.y]
+            } else {
+                worldPos = [item.geometry.labelPos.x, item.geometry.labelPos.y]
+            }
+            if (!viewBox.containsPoint(_v2.set(worldPos[0], worldPos[1]))) return;
+            updateLabelInfo(item);
+            const meta = item.labelInfo;
+            if (!meta || !meta.text) return;
+
+            !item._drawInfo && (item._drawInfo = {});
+            const label = item._drawInfo;
+
             Object.assign(label, {
-                name: info.text,
-                width: info.size[0],
-                height: info.size[1],
+                name: meta.text,
+                width: meta.size[0],
+                height: meta.size[1],
                 forceShow: hlItems.has(item),
-                color: '#' + _color.set("white").multiplyScalar(normalAlpha).getHexString(),
+                color: '#' + _color.set(item.label?.color || "white").multiplyScalar(normalAlpha).getHexString(),
                 order: (hlItems.has(item) ? 1000 : 0) + (item.isNode ? 2 : 1)
             });
-
             if (posChange) {
-                const pos = view.worldToScreen(info.worldPosition[0], info.worldPosition[1]);
-                label.x = pos.x - info.size[0] * 0.5;
-                label.y = pos.y - info.size[1] * 0.5;
+                const pos = view.worldToScreen(worldPos[0], worldPos[1]);
+                //左上角
+                label.x = pos.x - meta.size[0] * 0.5;
+                label.y = pos.y - meta.size[1] * 0.5;
             }
             if (enable) {
                 if (hlItems.has(item) && item.isNode) {
-
+                    //do nothing
                 } else if (hlItems.has(item) && item.isLink) {
                     label.color = '#' + _color.set("rgb(78,178,255)").multiplyScalar(normalAlpha).getHexString();
                 } else {
@@ -241,7 +234,18 @@ window.onload = async () => {
             return label
         }).filter(Boolean);
         labelRenderer.drawLabels(labels);
-    }),100,{leading:false,trailing:true});
+
+        function updateLabelInfo(item) {
+            if (!item.labelInfo) item.labelInfo = {};
+            const info = item.labelInfo;
+            const newText = item.label?.text;
+            if (info.text !== newText) {
+                info.text = newText;
+                info.size = newText ? measureText(newText, item.label.font) : null;
+            }
+        }
+    }
+    kg.addEventListener('after-render', drawLabel);
     view.use(kg).setConstraint(kg.constraint);
 
     //resize listen

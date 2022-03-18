@@ -1,4 +1,4 @@
-import {MathUtils} from "three";
+import Quadtree from '@timohausmann/quadtree-js'
 
 const DEFAULT_FONT = "600 16px serif";
 const DEFAULT_FONT_COLOR = "#FFFFFF";
@@ -26,7 +26,7 @@ export class LabelCanvasRenderer {
     constructor({width, height, canvas} = {}) {
         this.canvas = canvas || document.createElement("canvas");
         this.ctx = this.canvas.getContext('2d');
-        this.subSampleRatio = 0.2;//减少模板检测数据
+        this.subSampleRatio = 0.25;//减少模板检测数据
         this.setSize(width, height);
     }
 
@@ -44,39 +44,67 @@ export class LabelCanvasRenderer {
     }
 
     drawLabels(labels) {
-        const {ctx, canvas} = this, self = this;
+        const {ctx, canvas} = this;
         const dpr = window.devicePixelRatio;
-        const defaultFont = dpr === 1 ? DEFAULT_FONT : DEFAULT_FONT.replace(/\s+(\d+)(px)\s+/g,(...args)=> ` ${args[1]*dpr}${args[2]} `);
+        const defaultFont = dpr === 1 ? DEFAULT_FONT : DEFAULT_FONT.replace(/\s+(\d+)(px)\s+/g, (...args) => ` ${args[1] * dpr}${args[2]} `);
         labels = labels.sort((b, a) =>
             (a.forceShow ? Infinity : (a.order || 0)) - (b.forceShow ? Infinity : (b.order || 0))
         );
         if (!labels || !labels.length) return;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const stencil = this.stencil;
-        stencil.fill(0);
-
-        const showFlag = new Uint8Array(labels.length).fill(1);
-        //stencil test
-        for (let i = 0; i < labels.length; i++) {
+        const tree = new Quadtree({
+            x: 0,
+            y: 0,
+            width: this.width,
+            height: this.height
+        });
+        labels.forEach((item,idx) => {
+            item.__idx = idx;
+            item.__pass = 0;// 0待检查, 1已通过, -1未通过
+            tree.insert(item)
+        });
+        labels[0].__pass = 1;
+        for (let i = 1; i < labels.length; i++) {
             const curLabel = labels[i];
-            if (i === 0 || curLabel.forceShow) {
-                writeStencil(curLabel)
-            } else {
-                const collide = checkCollide(curLabel);
-                if (collide) {
-                    showFlag[i] = 0;
+            if (curLabel.__pass === -1) continue;
+            if (curLabel.forceShow) {
+                curLabel.__pass = 1;
+                continue;
+            }
+            const candidates = tree.retrieve(curLabel);
+            let collide = false;
+            for (let j = 0; j < candidates.length; j++) {
+                const candi = candidates[j];
+
+                const idx = candi.__idx; //candi的元素的索引
+                // 如果索引<=i, 说明candi已经检测过了(=i则是自己),无论碰撞与否,
+                // 如果candi未通过, 则没必要比较
+                // 如果candi已通过, 则必然与当前没有碰撞,(若有碰撞, 当前元素的__pass = -1, 在外层循环就已经跳过)
+                if(idx <= i) continue;
+
+                if (curLabel === candi || candi.__pass === -1) continue;
+                const _collide = intersect(curLabel, candi);
+                if (candi.forceShow || candi.__pass === 1) {
+                    if (_collide) {
+                        collide = true;
+                        break;
+                    }
                 } else {
-                    writeStencil(curLabel)
+                    if (_collide) {
+                        candi.__pass = -1;
+                    }
                 }
             }
+            curLabel.__pass = collide ? -1 : 1;
         }
-        //renderStencil();
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
         for (let l = labels.length, i = l - 1; i >= 0; i--) {
-            if (!showFlag[i]) continue;
+            if (labels[i].__pass <= 0) continue;
             const curLabel = labels[i];
             ctx.save();
             let {
-                x, y, name,
+                x, y, name, //x,y  左上角
                 width, height,
                 font = defaultFont,
                 color = DEFAULT_FONT_COLOR,
@@ -90,49 +118,12 @@ export class LabelCanvasRenderer {
             ctx.restore();
         }
 
-        function checkCollide(label) {
-            const r = self.subSampleRatio, size = self.stencil.size;
-            let {width, height, x, y} = label;
-            x = x * r >> 0;
-            y = y * r >> 0;
-            width = width * r >> 0;
-            height = height * r >> 0;
-            let f = 0;
-            for (let row = y; row < y + height; row++) {
-                for (let col = x; col < x + width; col++) {
-                    f |= stencil[row * size[0] + col];
-                    if (f) return true;
-                }
-            }
-            return false;
-        }
-
-        function writeStencil(label) {
-            const r = self.subSampleRatio, size = self.stencil.size;
-            let {width, height, x, y} = label;
-            x = x * r >> 0;
-            y = y * r >> 0;
-            width = width * r >> 0;
-            height = height * r >> 0;
-            const rows = MathUtils.clamp(y + height, 0, size[1]);
-            const cols = MathUtils.clamp(x + width, 0, size[0]);
-            for (let row = y; row < rows; row++) {
-                for (let col = x; col < cols; col++) {
-                    stencil[row * size[0] + col] = 1;
-                }
-            }
-        }
-
-        function renderStencil() {
-            const stencil = self.stencil;
-            const size = stencil.size;
-            const data = new Uint8ClampedArray(size[0] * size[1] * 4).fill(255)
-            for (let i = 0; i < size[0] * size[1]; i++) {
-                data[i * 4] =
-                    data[i * 4 + 1] =
-                        data[i * 4 + 2] = stencil[i] * 255;
-            }
-            ctx.putImageData(new ImageData(data, size[0], size[1]), 0, 0)
+        function intersect(a, b) {
+            const {x: ax, y: ay, width: aw, height: ah} = a;
+            const {x: bx, y: by, width: bw, height: bh} = b;
+            const acx = ax + aw * 0.5, acy = ay + ah * 0.5;
+            const bcx = bx + bw * 0.5, bcy = by + bh * 0.5;
+            return Math.abs(acx - bcx) < (aw + bw) * 0.5 && Math.abs(acy - bcy) < (ah + bh) * 0.5;
         }
 
     }
