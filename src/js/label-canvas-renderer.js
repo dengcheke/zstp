@@ -62,12 +62,16 @@ export class LabelCanvasRenderer {
             item.__pass = 0;// 0待检查, 1已通过, -1未通过
             tree.insert(item)
         });
-        labels[0].__pass = 1;
-        for (let i = 1; i < labels.length; i++) {
+        for (let i = 0; i < labels.length; i++) {
             const curLabel = labels[i];
             if (curLabel.__pass === -1) continue;
             if (curLabel.forceShow) {
                 curLabel.__pass = 1;
+                tree.retrieve(curLabel).forEach(item=>{
+                    if(item !== curLabel && !item.forceShow){
+                        intersect(curLabel, item) && (item.__pass = -1);
+                    }
+                });
                 continue;
             }
             const candidates = tree.retrieve(curLabel);

@@ -16,6 +16,9 @@ import {
     ShaderMaterial,
     SrcAlphaFactor,
     StaticDrawUsage,
+    Uint16BufferAttribute,
+    Uint8BufferAttribute,
+    Uint8ClampedBufferAttribute,
     Vector2,
     WebGLRenderTarget
 } from "three";
@@ -482,13 +485,24 @@ export class KgScene extends EventDispatcher {
             const nodeCount = nodes.length;
             [
                 {name: 'position', usage: DynamicDrawUsage, itemSize: 3},
-                {name: 'visible', usage: DynamicDrawUsage, itemSize: 1},
-                {name: 'isHl', usage: DynamicDrawUsage, itemSize: 1},
-                {name: 'size', usage: StaticDrawUsage, itemSize: 1},
-                {name: 'color', usage: StaticDrawUsage, itemSize: 3},
-                {name: 'pickId', usage: StaticDrawUsage, itemSize: 1},
-            ].forEach(({name, usage, itemSize}) => {
-                const attr = new Float32BufferAttribute(new Float32Array(itemSize * nodeCount), itemSize);
+                {
+                    name: 'show_hl_size',
+                    usage: DynamicDrawUsage,
+                    itemSize: 3,
+                    arr: Uint8Array,
+                    buf: Uint8BufferAttribute
+                },
+                {
+                    name: 'color',
+                    usage: StaticDrawUsage,
+                    itemSize: 3,
+                    arr: Uint8ClampedArray,
+                    buf: Uint8ClampedBufferAttribute,
+                    normalize: true
+                },
+                {name: 'pickId', usage: StaticDrawUsage, itemSize: 1, arr: Uint16Array, buf: Uint16BufferAttribute},
+            ].forEach(({name, usage, itemSize, arr, buf, normalize}) => {
+                const attr = new (buf || Float32BufferAttribute)(new (arr || Float32Array)(itemSize * nodeCount), itemSize, !!normalize);
                 attr.setUsage(usage).name = name;
                 geometry.setAttribute(name, attr);
             });
@@ -498,12 +512,10 @@ export class KgScene extends EventDispatcher {
             const hlSet = new Set(this.hlSet.get());
             const posBuf = geometry.getAttribute('position').array,
                 colorBuf = geometry.getAttribute('color').array,
-                sizeBuf = geometry.getAttribute('size').array,
                 pickIdBuf = geometry.getAttribute('pickId').array,
-                visibleBuf = geometry.getAttribute('visible').array,
-                hlBuf = geometry.getAttribute('isHl').array;
+                show_hl_size_buf = geometry.getAttribute('show_hl_size').array;
             for (let i = 0; i < nodes.length; i++) {
-                const node = nodes[i], i3 = i * 3;
+                const node = nodes[i], i3 = i * 3, i31 = i3 + 1, i32 = i3 + 2;
                 if (dataChange || visibleChange || appearChange) {
                     let visible;
                     if (node.visible === false) {
@@ -513,22 +525,22 @@ export class KgScene extends EventDispatcher {
                             ? decideShow({node: node})
                             : 1 //默认可见
                     }
-                    visibleBuf[i] = visible;
+                    show_hl_size_buf[i3] = visible;
 
-                    hlBuf[i] = hlSet.has(node) ? 1 : 0;
+                    show_hl_size_buf[i31] = hlSet.has(node) ? 1 : 0;
 
                     const style = node.style || {};
-                    sizeBuf[i] = (style.size || DefaultNodeSize)
-                        + (visible >= 1 && hlBuf[i] ? 2.5 : 0);
+                    show_hl_size_buf[i32] = (style.size || DefaultNodeSize)
+                        + (visible >= 1 && show_hl_size_buf[i31] ? 2.5 : 0);
 
                     _color.set(style.color || DefaultNodeColor);
-                    colorBuf[i3] = _color.r;
-                    colorBuf[i3 + 1] = _color.g;
-                    colorBuf[i3 + 2] = _color.b;
+                    colorBuf[i3] = _color.r * 255 >> 0;
+                    colorBuf[i31] = _color.g * 255 >> 0;
+                    colorBuf[i32] = _color.b * 255 >> 0;
                 }
                 if (dataChange || geoChange) {
                     posBuf[i3] = node.x;
-                    posBuf[i3 + 1] = node.y;
+                    posBuf[i31] = node.y;
                 }
                 if (dataChange) {
                     pickIdBuf[i] = node._gid;
@@ -540,9 +552,7 @@ export class KgScene extends EventDispatcher {
             }
             if (appearChange || dataChange || visibleChange) {
                 geometry.getAttribute('color').needsUpdate = true;
-                geometry.getAttribute('size').needsUpdate = true;
-                geometry.getAttribute('visible').needsUpdate = true;
-                geometry.getAttribute('isHl').needsUpdate = true;
+                geometry.getAttribute('show_hl_size').needsUpdate = true;
             }
             if (dataChange) {
                 geometry.getAttribute('pickId').needsUpdate = true;
@@ -576,14 +586,25 @@ export class KgScene extends EventDispatcher {
                     {name: "instance_C2_C3", itemSize: 4, usage: DynamicDrawUsage}, //控制点2 3
 
                     {name: "instanceVisible", itemSize: 1, usage: DynamicDrawUsage},
-                    {name: "instanceLineWidth", itemSize: 1, usage: DynamicDrawUsage},
-                    {name: "instanceFlowEnable", itemSize: 1, usage: DynamicDrawUsage},
+                    {name: "instance_width_flow", itemSize: 2, usage: DynamicDrawUsage, arr: Uint8Array},
                     //static
-                    {name: "instanceLineColorStart", itemSize: 3, usage: StaticDrawUsage},
-                    {name: "instanceLineColorEnd", itemSize: 3, usage: StaticDrawUsage},
+                    {
+                        name: "instanceLineColorStart",
+                        itemSize: 3,
+                        usage: StaticDrawUsage,
+                        arr: Uint8ClampedArray,
+                        normalize: true
+                    },
+                    {
+                        name: "instanceLineColorEnd",
+                        itemSize: 3,
+                        usage: StaticDrawUsage,
+                        arr: Uint8ClampedArray,
+                        normalize: true
+                    },
                     {name: "instance_PickId_Offset", itemSize: 2, usage: StaticDrawUsage},
-                ].forEach(({name, itemSize, usage}) => {
-                    const attr = new InstancedBufferAttribute(new Float32Array(segmentCount * itemSize), itemSize);
+                ].forEach(({name, itemSize, usage, arr, normalize}) => {
+                    const attr = new InstancedBufferAttribute(new (arr || Float32Array)(segmentCount * itemSize), itemSize, !!normalize);
                     attr.setUsage(usage).name = name;
                     geometry.setAttribute(name, attr);
                 })
@@ -594,9 +615,8 @@ export class KgScene extends EventDispatcher {
             const tBuf = geometry.getAttribute('instance_Bzr_T').array,
                 c1_dis_buf = geometry.getAttribute('instance_C1_Dis').array,
                 c2_c3_Buf = geometry.getAttribute('instance_C2_C3').array,
-                lineWidthBuf = geometry.getAttribute('instanceLineWidth').array,
                 visibleBuf = geometry.getAttribute('instanceVisible').array,
-                flowBuf = geometry.getAttribute('instanceFlowEnable').array,
+                width_flow_buf = geometry.getAttribute('instance_width_flow').array,
                 colorStartBuf = geometry.getAttribute('instanceLineColorStart').array,
                 colorEndBuf = geometry.getAttribute('instanceLineColorEnd').array,
                 pick_Offset_Buf = geometry.getAttribute('instance_PickId_Offset').array;
@@ -657,15 +677,15 @@ export class KgScene extends EventDispatcher {
                     if (dataChange || appearChange) {
                         const c3_1 = c3 + 1, c3_2 = c3 + 2;
                         _color.set(color1);
-                        colorStartBuf[c3] = _color.r;
-                        colorStartBuf[c3_1] = _color.g;
-                        colorStartBuf[c3_2] = _color.b;
+                        colorStartBuf[c3] = _color.r * 255;
+                        colorStartBuf[c3_1] = _color.g * 255;
+                        colorStartBuf[c3_2] = _color.b * 255;
                         _color.set(color2);
-                        colorEndBuf[c3] = _color.r;
-                        colorEndBuf[c3_1] = _color.g;
-                        colorEndBuf[c3_2] = _color.b;
-                        lineWidthBuf[cursor] = lineWidth || DefaultLinkWidth;
-                        flowBuf[cursor] = flow;
+                        colorEndBuf[c3] = _color.r * 255;
+                        colorEndBuf[c3_1] = _color.g * 255;
+                        colorEndBuf[c3_2] = _color.b * 255;
+                        width_flow_buf[cursor] = (lineWidth || DefaultLinkWidth) >> 0;
+                        width_flow_buf[cursor + 1] = flow;
                     }
                     //move cursor
                     cursor += 1;
@@ -687,7 +707,7 @@ export class KgScene extends EventDispatcher {
                 [
                     'instanceLineColorStart',
                     'instanceLineColorEnd',
-                    'instanceFlowEnable'
+                    'instance_width_flow'
                 ].forEach(key => {
                     geometry.getAttribute(key).needsUpdate = true;
                 })

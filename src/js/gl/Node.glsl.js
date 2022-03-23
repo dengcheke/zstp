@@ -3,10 +3,8 @@ uniform bool isPick;
 uniform float scale;
 
 attribute float pickId;
-attribute float visible;
-attribute float isHl;
+attribute vec3 show_hl_size;
 attribute vec3 color;
-attribute float size;
 
 varying vec3 vColor;
 varying float vShow;
@@ -23,6 +21,10 @@ vec3 unpackColor(float f){
 }
 
 void main(){
+    float visible = show_hl_size[0];
+    float isHl = show_hl_size[1];
+    float size = show_hl_size[2];
+    
     vSize = gl_PointSize = floor(size * scale);
     gl_Position = projectionMatrix * modelViewMatrix * vec4( position.xy, 0, 1);
     vec3 diffuse = color;

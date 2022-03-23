@@ -19,8 +19,12 @@
     <select />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="cb84160d-f7da-4411-8723-127905e6cb0a" name="Default Changelist" comment="">
+    <list default="true" id="ad375cee-c9f2-45e5-9c28-fec88be7c547" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/js/gl/Link.glsl.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/js/gl/Link.glsl.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/js/gl/Node.glsl.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/js/gl/Node.glsl.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/js/kg-scene.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/js/kg-scene.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/js/label-canvas-renderer.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/js/label-canvas-renderer.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -106,7 +110,7 @@
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
-      <changelist id="cb84160d-f7da-4411-8723-127905e6cb0a" name="Default Changelist" comment="" />
+      <changelist id="ad375cee-c9f2-45e5-9c28-fec88be7c547" name="Default Changelist" comment="" />
       <created>1639130023053</created>
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
@@ -135,6 +139,7 @@
       <workItem from="1647400963965" duration="12000" />
       <workItem from="1647507287710" duration="5849000" />
       <workItem from="1647569239208" duration="407000" />
+      <workItem from="1648015233728" duration="1443000" />
     </task>
     <task id="LOCAL-00001" summary="build">
       <created>1639377786291</created>
@@ -283,22 +288,22 @@
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
     <state x="327" y="127" key="Git.Interactive.Rebase.Dialog/0.0.1920.1040@0.0.1920.1040" timestamp="1647512398944" />
-    <state width="1893" height="464" key="GridCell.Tab.0.bottom" timestamp="1647569646427">
+    <state width="1893" height="383" key="GridCell.Tab.0.bottom" timestamp="1647590985183">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state width="1893" height="464" key="GridCell.Tab.0.bottom/0.0.1920.1040@0.0.1920.1040" timestamp="1647569646427" />
-    <state width="1893" height="464" key="GridCell.Tab.0.center" timestamp="1647569646427">
+    <state width="1893" height="383" key="GridCell.Tab.0.bottom/0.0.1920.1040@0.0.1920.1040" timestamp="1647590985183" />
+    <state width="1893" height="383" key="GridCell.Tab.0.center" timestamp="1647590985183">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state width="1893" height="464" key="GridCell.Tab.0.center/0.0.1920.1040@0.0.1920.1040" timestamp="1647569646427" />
-    <state width="1893" height="464" key="GridCell.Tab.0.left" timestamp="1647569646427">
+    <state width="1893" height="383" key="GridCell.Tab.0.center/0.0.1920.1040@0.0.1920.1040" timestamp="1647590985183" />
+    <state width="1893" height="383" key="GridCell.Tab.0.left" timestamp="1647590985182">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state width="1893" height="464" key="GridCell.Tab.0.left/0.0.1920.1040@0.0.1920.1040" timestamp="1647569646427" />
-    <state width="1893" height="464" key="GridCell.Tab.0.right" timestamp="1647569646427">
+    <state width="1893" height="383" key="GridCell.Tab.0.left/0.0.1920.1040@0.0.1920.1040" timestamp="1647590985182" />
+    <state width="1893" height="383" key="GridCell.Tab.0.right" timestamp="1647590985183">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state width="1893" height="464" key="GridCell.Tab.0.right/0.0.1920.1040@0.0.1920.1040" timestamp="1647569646427" />
+    <state width="1893" height="383" key="GridCell.Tab.0.right/0.0.1920.1040@0.0.1920.1040" timestamp="1647590985183" />
     <state width="1893" height="331" key="GridCell.Tab.1.bottom" timestamp="1639359909609">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
@@ -347,10 +352,10 @@
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
     <state width="1893" height="331" key="GridCell.Tab.3.right/0.0.1920.1040@0.0.1920.1040" timestamp="1639359909609" />
-    <state x="452" y="188" key="Vcs.Push.Dialog.v2" timestamp="1647568618124">
+    <state x="452" y="188" key="Vcs.Push.Dialog.v2" timestamp="1647590977680">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state x="452" y="188" key="Vcs.Push.Dialog.v2/0.0.1920.1040@0.0.1920.1040" timestamp="1647568618124" />
+    <state x="452" y="188" key="Vcs.Push.Dialog.v2/0.0.1920.1040@0.0.1920.1040" timestamp="1647590977680" />
     <state x="92" y="92" width="1736" height="856" key="com.intellij.history.integration.ui.views.FileHistoryDialog" timestamp="1639130600724">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>

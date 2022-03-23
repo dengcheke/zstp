@@ -14,7 +14,7 @@ const PointerAction = Object.freeze({
 })
 
 function getTestGraphData() {
-    const N = 1000;
+    const N = 100;
     let nid = 1;
     let lid = 1;
     const nodeMap = {};

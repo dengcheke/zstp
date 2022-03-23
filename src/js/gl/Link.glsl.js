@@ -14,9 +14,9 @@ attribute vec3 instanceLineColorEnd;
 
 attribute vec2 instance_PickId_Offset;//[pickid, disOffset]
 
-attribute float instanceLineWidth;
 attribute float instanceVisible;
-attribute float instanceFlowEnable;
+
+attribute vec2 instance_width_flow;
 
 
 varying vec2 vUv;
@@ -61,7 +61,7 @@ void main() {
     vLineDistance = ( position.y < 0.5 ) ? instance_C1_Dis[2] : instance_C1_Dis[3];
     vLineDistance += instance_PickId_Offset[1];
     vShow = instanceVisible;
-    vFlowEnable = instanceFlowEnable;
+    vFlowEnable = instance_width_flow[1];
     vColor = isPick ? unpackColor(instance_PickId_Offset[0])
                 : mix(instanceLineColorStart, instanceLineColorEnd, vLineDistance);
     vUv = uv;
@@ -100,7 +100,7 @@ void main() {
     
     if ( position.x > 0.0 ) offset *= -1.0;
     
-    offset *= instanceLineWidth * lineWidthScale * 0.5;
+    offset *= instance_width_flow[0] * lineWidthScale * 0.5;
     screenPos += offset;
     
     gl_Position = vec4(screenToNDC(screenPos), 0.0, 1.0);
