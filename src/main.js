@@ -191,7 +191,12 @@ window.onload = async () => {
         //一开始, 所有标签挤在一起, 四叉树性能低下, 减少标签数量
         const samplerRatio = Math.min(kg._ticks / 300, 1);
         const totalLength = nodes.length + links.length;
-        const labels = [nodes, links].flat().map((item, idx) => {
+        let labels = [nodes, links].flat();
+        posChange && labels.forEach(item => {
+            !item._drawInfo && (item._drawInfo = {});
+            item._drawInfo._posChange = true;
+        })
+        labels = labels.map((item, idx) => {
             if (idx / totalLength > samplerRatio) return;
             if (item.visible === false) return;
             let worldPos;
@@ -216,11 +221,12 @@ window.onload = async () => {
                 color: '#' + _color.set(item.label?.color || "white").multiplyScalar(normalAlpha).getHexString(),
                 order: (hlItems.has(item) ? 1000 : 0) + (item.isNode ? 2 : 1)
             });
-            if (posChange) {
+            if (label._posChange) {
                 const pos = view.worldToScreen(worldPos[0], worldPos[1]);
                 //左上角
                 label.x = pos.x - meta.size[0] * 0.5;
                 label.y = pos.y - meta.size[1] * 0.5;
+                labels._posChange = false;
             }
             if (enable) {
                 if (hlItems.has(item) && item.isNode) {
