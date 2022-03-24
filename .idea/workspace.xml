@@ -133,6 +133,7 @@
       <workItem from="1647507287710" duration="5849000" />
       <workItem from="1647569239208" duration="407000" />
       <workItem from="1648015233728" duration="1615000" />
+      <workItem from="1648022297818" duration="192000" />
     </task>
     <task id="LOCAL-00001" summary="build">
       <created>1639377786291</created>
@@ -232,7 +233,14 @@
       <option name="project" value="LOCAL" />
       <updated>1648016773848</updated>
     </task>
-    <option name="localTasksCounter" value="15" />
+    <task id="LOCAL-00015" summary="label-renderer bug fixed">
+      <created>1648022480819</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1648022480819</updated>
+    </task>
+    <option name="localTasksCounter" value="16" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -262,21 +270,14 @@
     <MESSAGE value="clear" />
     <MESSAGE value="optimize event" />
     <MESSAGE value="label-renderer collide update, &#10;node, link attributes buf type update, save memory" />
-    <option name="LAST_COMMIT_MESSAGE" value="label-renderer collide update, &#10;node, link attributes buf type update, save memory" />
+    <MESSAGE value="label-renderer bug fixed" />
+    <option name="LAST_COMMIT_MESSAGE" value="label-renderer bug fixed" />
   </component>
   <component name="WindowStateProjectService">
-    <state x="452" y="74" key="#Plugins" timestamp="1639378764556">
+    <state x="609" y="40" key="CommitChangelistDialog2" timestamp="1648022479649">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state x="452" y="74" key="#Plugins/0.0.1920.1040@0.0.1920.1040" timestamp="1639378764556" />
-    <state x="656" y="304" key="#com.intellij.fileTypes.FileTypeChooser" timestamp="1639378670583">
-      <screen x="0" y="0" width="1920" height="1040" />
-    </state>
-    <state x="656" y="304" key="#com.intellij.fileTypes.FileTypeChooser/0.0.1920.1040@0.0.1920.1040" timestamp="1639378670583" />
-    <state x="609" y="55" key="CommitChangelistDialog2" timestamp="1648016772843">
-      <screen x="0" y="0" width="1920" height="1040" />
-    </state>
-    <state x="609" y="55" key="CommitChangelistDialog2/0.0.1920.1040@0.0.1920.1040" timestamp="1648016772843" />
+    <state x="609" y="40" key="CommitChangelistDialog2/0.0.1920.1040@0.0.1920.1040" timestamp="1648022479649" />
     <state x="327" y="127" key="Git.Interactive.Rebase.Dialog" timestamp="1647512398944">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
@@ -297,9 +298,9 @@
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
     <state width="1893" height="190" key="GridCell.Tab.0.right/0.0.1920.1040@0.0.1920.1040" timestamp="1648016851018" />
-    <state x="452" y="188" key="Vcs.Push.Dialog.v2" timestamp="1648016827782">
+    <state x="452" y="188" key="Vcs.Push.Dialog.v2" timestamp="1648022484680">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state x="452" y="188" key="Vcs.Push.Dialog.v2/0.0.1920.1040@0.0.1920.1040" timestamp="1648016827782" />
+    <state x="452" y="188" key="Vcs.Push.Dialog.v2/0.0.1920.1040@0.0.1920.1040" timestamp="1648022484680" />
   </component>
 </project>

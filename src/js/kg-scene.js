@@ -6,7 +6,7 @@ import {
     DynamicDrawUsage,
     EventDispatcher,
     Float32BufferAttribute,
-    InstancedBufferAttribute,
+    InstancedBufferAttribute, Int8BufferAttribute,
     MathUtils,
     NoBlending,
     OneMinusSrcAlphaFactor,
@@ -489,8 +489,8 @@ export class KgScene extends EventDispatcher {
                     name: 'show_hl_size',
                     usage: DynamicDrawUsage,
                     itemSize: 3,
-                    arr: Uint8Array,
-                    buf: Uint8BufferAttribute
+                    arr: Int8Array, // show maybe = -1
+                    buf: Int8BufferAttribute
                 },
                 {
                     name: 'color',
